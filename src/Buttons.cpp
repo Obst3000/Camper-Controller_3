@@ -21,6 +21,8 @@ void buttonsInit() {
 
 }
 
+//Test
+
 void buttonsUpdate() {
     for (int i = 0; i < ZONE_COUNT; i++)
         buttons[i]->check();
