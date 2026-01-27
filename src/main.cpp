@@ -6,8 +6,7 @@
 void setup() {
     Serial.begin(115200);
 
-    lightingInit();
-        Serial.println("Init Lighting");
+
     buttonsInit();
         Serial.println("Init Buttons");
     //mqttInit();
@@ -19,6 +18,5 @@ void loop() {
     buttonsUpdate();
    // mqttUpdate();
     lightingUpdate(); // fades happen here
-
 
 }
