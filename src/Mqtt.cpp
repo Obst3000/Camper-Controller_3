@@ -3,8 +3,9 @@
 #include "Config.h"
 #include "Lighting.h"
 
-WiFiClient wifi;
-PubSubClient mqtt(wifi);
+// Network and MQTT clients (global instances)
+WiFiClient wifi_client;
+PubSubClient mqtt_client(wifi_client);
 
 void mqttCallback(char* topic, byte* payload, unsigned int len) {
    /* String t = topic;
@@ -25,14 +26,14 @@ void mqttInit() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.status() != WL_CONNECTED) delay(200);
 
-    mqtt.setServer(MQTT_SERVER, MQTT_PORT);
-    mqtt.setCallback(mqttCallback);
+    mqtt_client.setServer(MQTT_SERVER, MQTT_PORT);
+    mqtt_client.setCallback(mqttCallback);
 }
 
 void mqttUpdate() {
-    if (!mqtt.connected()) {
-        mqtt.connect("camper_controller");
-        mqtt.subscribe("camper/zone/+/set");
+    if (!mqtt_client.connected()) {
+        mqtt_client.connect("camper_controller");
+        mqtt_client.subscribe("camper/zone/+/set");
     }
-    mqtt.loop();
+    mqtt_client.loop();
 }

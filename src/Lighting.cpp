@@ -1,9 +1,14 @@
 #include "Lighting.h"
 #include "Led.h"
 
+// Lighting implementation
+// - Implements `Led` methods (constructor, update/apply, dimming, timer)
+// - Declares global `led_*` instances and `leds[]` pointer array
+// - Provides simple helpers: `lightingUpdate`, `lightingSetAllOn/Off`
+
 // --- Led class implementation ---
 Led::Led(int pin, int channel, uint8_t initial)
-    : _pin(pin), _channel(channel), _target(initial), _actual(initial)
+    : _pin(pin), _channel(channel), _target(initial), _actual(initial), _targetOffAt(0)
 {
     initLed();
 }
@@ -22,26 +27,30 @@ void Led::initLed()
     ledcSetup(_channel, PWM_FREQ, PWM_RES);
     ledcAttachPin(_pin, _channel);
 }
+
+void Led::startTimer(uint32_t s)
+{
+    if (s == 0) {
+        _targetOffAt = 0;
+    } else {
+        _targetOffAt = millis() + s*1000;
+    }
+}
 void Led::toggle()
 {
     if (_target > 0)
     {
-        //  setTarget(0);
-        //  setActual(0);
+        _lastValue = _target;
         _target = 0;
+
+        _targetOffAt = 0; // cancel any running timer
     }
     else
     {
-        // setTarget(255);
-        //  setActual(255);
-        _target = 255;
+        _target = _defaultValue;
     }
-    //_target=255;
-    //  _actual=0;
-    //_target=200;
-    //  _actual = _target; // prevent underflow
 
-     //apply();
+    
 }
 void Led::startDimming()
 {
@@ -55,21 +64,20 @@ void Led::endDimming()
 
 void Led::update(uint8_t step)
 {
-    if (false)
-    {
-
-       
-
+    // If a timer to switch off was set and expired, force target to 0
+    if (_targetOffAt != 0 && millis() >= _targetOffAt) {
+        _target = 0;
+        _targetOffAt = 0;
     }
 
      if (dimming)
         {
-            int d = 2;
+            int d = 1; // dimming step size
             if (dimmingdirection)
             {
-                if (_target + d > 255)
+                if (_target + d > _maxValue)
                 {
-                    _target = 255;
+                    _target = _maxValue;
                 }
                 else
                 {
@@ -123,62 +131,88 @@ void Led::update(uint8_t step)
             }
         }
         apply();
-    // if (_actual == _target)
-    // {
 
-    //     return;
-    // }
-    // else
-    // {
-    //     _actual = _target;
-    //     apply();
-    // }
-
-    //_actual = _target; // prevent underflow
 }
 
-void Led::apply() const // gets jammed if called to often
+void Led::apply()  // gets jammed if called to often
 {
-    if (_channel >= 0)
+    if (_channel < 0)
+        return;
+
+    // output range and compensation settings
+     int outMin = 0;
+     int outMax = 255;
+     bool compensateLinearity = true; // set to false to use linear mapping
+     float gamma = 2.8f;              // >1 darkens low end, <1 brightens low end
+
+    float maxIn = (_maxValue > 0) ? float(_maxValue) : 100.0f;
+    float inNorm = float(_actual) / maxIn;
+    if (inNorm <= 0.0f)
     {
-        ledcWrite(_channel, _actual);
+        ledcWrite(_channel, outMin);
+        return;
     }
+    if (inNorm >= 1.0f)
+    {
+        ledcWrite(_channel, outMax);
+        return;
+    }
+
+    if (compensateLinearity)
+        inNorm = powf(inNorm, gamma);
+
+    int mapped = outMin + int(roundf(inNorm * float(outMax - outMin)));
+    if (mapped < outMin) mapped = outMin;
+    if (mapped > outMax) mapped = outMax;
+
+    ledcWrite(_channel, mapped);
+
+    if (_targetOffAt == 0)//Start default turn off timer if not already running
+    {
+       startTimer(_defaultOffAt);
+    }
+    
+    
+
 }
 
 // Define one Led object per strip and expose the array (matches extern in Config.h)
-Led LeftRearLed(LeftRearLedPin, 0);
-Led RightRearLed(RightRearLedPin, 1, 100);
-Led LeftFrontLed(LeftFrontLedPin, 2, 100);
-Led RightFrontLed(RightFrontLedPin, 3, 100);
-Led KitchenLed(KitchenLedPin, 4, 100);
-Led LuggageLed(LuggageLedPin, 5, 100);
-Led SideDoorLed(SideDoorLedPin, 6, 100);
+// Global Led instances (renamed to snake_case with `led_` prefix)
+Led led_left_rear(LeftRearLedPin, 0);
+Led led_right_rear(RightRearLedPin, 1);
+Led led_left_front(LeftFrontLedPin, 2);
+Led led_right_front(RightFrontLedPin, 3);
+Led led_kitchen(KitchenLedPin, 4);
+Led led_luggage(LuggageLedPin, 5);
+Led led_side_door(SideDoorLedPin, 6);
 
-// Led leds[ZONE_COUNT] = {
-//     LeftRearLed,
-//     RightRearLed,
-//     LeftFrontLed,
-//     RightFrontLed,
-//     KitchenLed,
-//     LuggageLed,
-//     SideDoorLed};
+// Array of pointers to the existing Led instances - preserves identity
+Led* leds[ZONE_COUNT] = {
+    &led_left_rear,
+    &led_right_rear,
+    &led_left_front,
+    &led_right_front,
+    &led_kitchen,
+    &led_luggage,
+    &led_side_door
+};
 
 const uint16_t FADE_STEP_MS = 15;
-const uint8_t FADE_STEP = 5;
+const uint8_t FADE_STEP = 2;
 uint32_t lastFadeUpdate = 0;
 
 void lightingSetAllOff()
 {
     for (int i = 0; i < ZONE_COUNT; ++i)
     {
-        // eds[i].setTarget(0);
+        leds[i]->setTarget(0);
     }
 }
 void lightingSetAllOn()
 {
     for (int i = 0; i < ZONE_COUNT; ++i)
     {
-        // leds[i].setTarget(50);
+        leds[i]->setTarget(255);
     }
 }
 
@@ -189,9 +223,8 @@ void lightingUpdate()
         return;
     lastFadeUpdate = now;
 
-    LeftRearLed.update(FADE_STEP);
     for (int i = 0; i < ZONE_COUNT; i++)
     {
-       // leds[i].update(FADE_STEP);
+        leds[i]->update(FADE_STEP);
     }
 }
